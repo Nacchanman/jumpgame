@@ -79,6 +79,8 @@
       box-shadow:
         0 20px 40px rgba(6, 24, 44, 0.24),
         inset 0 1px 0 rgba(255,255,255,0.55);
+      max-height: 58vh;
+      object-fit: contain;
     }
 
     .controls {
@@ -96,7 +98,8 @@
       display: flex;
       justify-content: center;
       gap: 14px;
-      margin-top: 12px;
+      margin-top: 10px;
+      flex-wrap: nowrap;
     }
 
     .control-button {
@@ -105,12 +108,12 @@
       color: #fff;
       font-weight: bold;
       border-radius: 22px;
-      min-height: 72px;
-      padding: 16px 28px;
+      min-height: 64px;
+      padding: 12px 20px;
       box-shadow:
         inset 0 1px 0 rgba(255,255,255,0.28),
         0 12px 22px rgba(0, 0, 0, 0.2);
-      font-size: 22px;
+      font-size: 20px;
     }
 
     .jump-button {
@@ -170,44 +173,80 @@
     @media (max-width: 900px) {
       .game-wrap {
         width: 100vw;
+        padding-top: max(6px, env(safe-area-inset-top));
+        padding-bottom: max(6px, env(safe-area-inset-bottom));
       }
 
       .hud {
-        margin-bottom: 6px;
+        margin-bottom: 4px;
+        gap: 6px;
+      }
+
+      .hud-left, .hud-right {
+        gap: 6px;
       }
 
       .hud-pill {
-        padding: 5px 9px;
+        padding: 4px 8px;
+        font-size: 12px;
       }
 
       .life-display {
-        font-size: 18px;
+        font-size: 16px;
+      }
+
+      #gameCanvas {
+        max-height: 50vh;
+        border-radius: 18px;
       }
 
       .controls {
-        font-size: 13px;
+        font-size: 11px;
+        margin-top: 6px;
+        gap: 6px;
       }
 
       .mobile-controls {
-        gap: 10px;
+        gap: 8px;
+        margin-top: 8px;
       }
 
       .jump-button {
-        min-width: 42vw;
+        min-width: 38vw;
       }
 
       .attack-button {
-        min-width: 32vw;
+        min-width: 26vw;
       }
 
       .restart-button {
-        min-width: 18vw;
+        min-width: 16vw;
       }
 
       .control-button {
-        min-height: 64px;
-        font-size: 20px;
-        padding: 14px 18px;
+        min-height: 52px;
+        font-size: 17px;
+        padding: 10px 12px;
+        border-radius: 16px;
+      }
+    }
+
+    @media (max-width: 900px) and (orientation: landscape) {
+      body {
+        align-items: flex-start;
+      }
+
+      .game-wrap {
+        padding-left: max(6px, env(safe-area-inset-left));
+        padding-right: max(6px, env(safe-area-inset-right));
+      }
+
+      #gameCanvas {
+        max-height: 46vh;
+      }
+
+      .controls {
+        display: none;
       }
     }
   </style>
@@ -456,11 +495,11 @@
         type: 'ember',
         x,
         y,
-        vx: -0.5 + Math.random() * 1,
-        vy: -0.7 + Math.random() * 0.7,
-        size: 3 + Math.random() * 3,
+        vx: -1.8 - Math.random() * 1.8,
+        vy: -0.4 + Math.random() * 0.8,
+        size: 3 + Math.random() * 4,
         life: 10 + Math.random() * 8,
-        color: Math.random() > 0.5 ? 'rgba(255,200,80,0.9)' : 'rgba(255,90,0,0.85)'
+        color: Math.random() > 0.5 ? 'rgba(255,210,90,0.9)' : 'rgba(255,90,0,0.9)'
       });
     }
 
@@ -505,17 +544,27 @@
     }
 
     function spawnFireball(beast) {
+      const mouthX = beast.x - 6;
+      const mouthY = beast.y + 24;
+      const targetY = player.y + player.height * 0.42;
+      const dy = targetY - mouthY;
+      const vx = -(gameSpeed + 6.2);
+      const vy = Math.max(-1.2, Math.min(1.2, dy / 90));
+
       projectiles.push({
         type: 'fire',
-        x: beast.x - 8,
-        y: beast.y + 26,
-        width: 34,
-        height: 22,
-        vx: -(gameSpeed + 4.8),
-        anim: 0
+        x: mouthX,
+        y: mouthY,
+        width: 58,
+        height: 24,
+        vx,
+        vy,
+        anim: 0,
+        corePhase: Math.random() * Math.PI * 2
       });
-      for (let i = 0; i < 12; i++) {
-        spawnFlameTrail(beast.x - 4, beast.y + 26);
+
+      for (let i = 0; i < 18; i++) {
+        spawnFlameTrail(mouthX + 8, mouthY + 10);
       }
     }
 
@@ -632,12 +681,16 @@
 
       for (const fire of projectiles) {
         fire.x += fire.vx;
-        fire.anim += 0.24;
-        if (Math.random() < 0.75) {
-          spawnFlameTrail(fire.x + fire.width * 0.85, fire.y + fire.height * 0.5);
+        fire.y += fire.vy;
+        fire.anim += 0.28;
+        fire.corePhase += 0.22;
+        fire.width = 52 + Math.sin(fire.anim * 1.1) * 8;
+        fire.height = 22 + Math.sin(fire.anim * 1.7) * 3;
+        if (Math.random() < 0.9) {
+          spawnFlameTrail(fire.x + fire.width * 0.92, fire.y + fire.height * 0.52);
         }
       }
-      projectiles = projectiles.filter(f => f.x + f.width > -50);
+      projectiles = projectiles.filter(f => f.x + f.width > -80 && f.y > 0 && f.y < canvas.height);
 
       for (const item of items) {
         item.x -= gameSpeed;
@@ -767,7 +820,7 @@
       }
 
       for (const fire of projectiles) {
-        const f = { x: fire.x + 3, y: fire.y + 2, w: fire.width - 6, h: fire.height - 4 };
+        const f = { x: fire.x + 4, y: fire.y + 2, w: fire.width - 8, h: fire.height - 4 };
         if (rectsIntersect(p, f)) {
           takeDamage();
           fire.x = -999;
@@ -849,7 +902,6 @@
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
       for (const s of sparkles) {
         const alpha = s.a + Math.sin(s.tw) * 0.12;
         ctx.fillStyle = `rgba(255,255,255,${alpha})`;
@@ -977,13 +1029,9 @@
       let armAngle = -0.15;
       if (player.hasSword) armAngle = 0.26;
       if (player.isAttacking) {
-        if (phase < 7) {
-          armAngle = -1.55 - phase * 0.08;
-        } else if (phase < 18) {
-          armAngle = -2.1 + (phase - 7) * 0.31;
-        } else {
-          armAngle = 1.3 - (phase - 18) * 0.12;
-        }
+        if (phase < 7) armAngle = -1.55 - phase * 0.08;
+        else if (phase < 18) armAngle = -2.1 + (phase - 7) * 0.31;
+        else armAngle = 1.3 - (phase - 18) * 0.12;
       }
       ctx.rotate(armAngle);
 
@@ -1168,7 +1216,7 @@
       if (!enemy.hasBreathed && enemy.fireCooldown < 24) {
         ctx.fillStyle = 'rgba(255,120,0,0.55)';
         ctx.beginPath();
-        ctx.ellipse(-16, 22, 20 + Math.sin(enemy.anim * 2) * 4, 9, 0, 0, Math.PI * 2);
+        ctx.ellipse(-18, 24, 28 + Math.sin(enemy.anim * 2) * 4, 11, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -1178,20 +1226,35 @@
     function drawProjectile(fire) {
       ctx.save();
       ctx.translate(fire.x, fire.y);
-      const flame = ctx.createLinearGradient(0, 0, fire.width, 0);
-      flame.addColorStop(0, '#fff0a8');
-      flame.addColorStop(0.45, '#ffb347');
-      flame.addColorStop(1, '#ff5a1f');
-      ctx.fillStyle = flame;
+      ctx.scale(-1, 1);
+
+      const w = fire.width;
+      const h = fire.height;
+
+      const outer = ctx.createLinearGradient(0, 0, w, 0);
+      outer.addColorStop(0, '#ff3b1f');
+      outer.addColorStop(0.55, '#ff9f1c');
+      outer.addColorStop(1, '#ffe29a');
+      ctx.fillStyle = outer;
       ctx.beginPath();
-      ctx.moveTo(fire.width, fire.height / 2);
-      ctx.quadraticCurveTo(fire.width * 0.5, -4 + Math.sin(fire.anim) * 3, 0, fire.height / 2);
-      ctx.quadraticCurveTo(fire.width * 0.5, fire.height + 4 - Math.sin(fire.anim) * 3, fire.width, fire.height / 2);
+      ctx.moveTo(0, h * 0.5);
+      ctx.quadraticCurveTo(w * 0.25, -6 + Math.sin(fire.anim) * 3, w, h * 0.46);
+      ctx.quadraticCurveTo(w * 0.66, h * 0.5, w * 0.88, h * 0.14);
+      ctx.quadraticCurveTo(w * 0.68, h * 0.48, w * 0.9, h * 0.88);
+      ctx.quadraticCurveTo(w * 0.64, h * 0.56, 0, h * 0.5);
       ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+
+      const inner = ctx.createLinearGradient(0, 0, w, 0);
+      inner.addColorStop(0, 'rgba(255,255,210,0.95)');
+      inner.addColorStop(1, 'rgba(255,210,90,0.2)');
+      ctx.fillStyle = inner;
       ctx.beginPath();
-      ctx.ellipse(fire.width * 0.68, fire.height / 2, 6, 4, 0, 0, Math.PI * 2);
+      ctx.moveTo(w * 0.15, h * 0.5);
+      ctx.quadraticCurveTo(w * 0.44, h * 0.14 + Math.sin(fire.corePhase) * 1.5, w * 0.82, h * 0.46);
+      ctx.quadraticCurveTo(w * 0.56, h * 0.5, w * 0.8, h * 0.76);
+      ctx.quadraticCurveTo(w * 0.48, h * 0.58, w * 0.15, h * 0.5);
       ctx.fill();
+
       ctx.restore();
     }
 

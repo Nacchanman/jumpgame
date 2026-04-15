@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ジャンプアクションゲーム</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      touch-action: manipulation;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      background: linear-gradient(to bottom, #9fd3ff 0%, #dff3ff 70%, #f7fbff 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+      padding: 12px;
+    }
+
+    .game-wrap {
+      width: min(960px, 96vw);
+      max-width: 100%;
+    }
+
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      color: #17324d;
+      font-weight: bold;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .hud .left,
+    .hud .right {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #gameCanvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      border: 3px solid #17324d;
+      border-radius: 16px;
+      background: linear-gradient(to bottom, #8fd0ff 0%, #cfeeff 65%, #ecfbff 100%);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+    }
+
+    .controls {
+      margin-top: 10px;
+      color: #17324d;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .mobile-controls {
+      display: none;
+      margin-top: 14px;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .jump-button,
+    .restart-button {
+      appearance: none;
+      border: none;
+      border-radius: 18px;
+      font-weight: bold;
+      color: white;
+      box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+    }
+
+    .jump-button {
+      min-width: 220px;
+      min-height: 72px;
+      padding: 16px 28px;
+      font-size: 24px;
+      background: linear-gradient(180deg, #ff9f1c, #f77f00);
+    }
+
+    .restart-button {
+      min-width: 100px;
+      min-height: 72px;
+      padding: 16px 20px;
+      font-size: 18px;
+      background: linear-gradient(180deg, #3a86ff, #265dbe);
+    }
+
+    .jump-button:active,
+    .restart-button:active {
+      transform: translateY(2px) scale(0.99);
+    }
+
+    .kbd {
+      display: inline-block;
+      padding: 2px 8px;
+      border: 1px solid #17324d;
+      border-bottom-width: 3px;
+      border-radius: 6px;
+      background: white;
+      font-size: 12px;
+      font-weight: bold;
+      margin: 0 2px;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 8px;
+        align-items: flex-start;
+      }
+
+      .game-wrap {
+        width: 100%;
+      }
+
+      .hud {
+        font-size: 14px;
+        margin-bottom: 8px;
+      }
+
+      .controls {
+        font-size: 13px;
+      }
+
+      .mobile-controls {
+        display: flex;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-wrap">
+    <div class="hud">
+      <div class="left">
+        <div>スコア: <span id="score">0</span></div>
+        <div>ベスト: <span id="bestScore">0</span></div>
+      </div>
+      <div class="right">
+        <div id="status">スペースキーでスタート / ジャンプ</div>
+      </div>
+    </div>
+
+    <canvas id="gameCanvas" width="960" height="420"></canvas>
+
+    <div class="mobile-controls">
+      <button class="jump-button" id="jumpButton" aria-label="ジャンプ">ジャンプ</button>
+      <button class="restart-button" id="restartButton" aria-label="リスタート">再開</button>
+    </div>
+
+    <div class="controls">
+      操作: <span class="kbd">Space</span> / <span class="kbd">↑</span> / クリック / タップ でジャンプ<br>
+      ゲームオーバー後は <span class="kbd">R</span> でリスタート
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const scoreEl = document.getElementById('score');
+    const bestScoreEl = document.getElementById('bestScore');
+    const statusEl = document.getElementById('status');
+    const jumpButton = document.getElementById('jumpButton');
+    const restartButton = document.getElementById('restartButton');
+
+    const GROUND_Y = 340;
+    const GRAVITY = 0.85;
+    const JUMP_POWER = -15.5;
+    const PLAYER_X = 140;
+
+    let gameSpeed = 6;
+    let frameCount = 0;
+    let score = 0;
+    let bestScore = Number(localStorage.getItem('jumpGameBestScore') || 0);
+    let gameState = 'ready'; // ready, playing, gameover
+
+    bestScoreEl.textContent = bestScore;
+
+    const player = {
+      x: PLAYER_X,
+      y: GROUND_Y - 54,
+      width: 42,
+      height: 54,
+      vy: 0,
+      isOnGround: true,
+      animTimer: 0
+    };
+
+    let obstacles = [];
+    let clouds = createClouds();
+    let particles = [];
+    let groundOffset = 0;
+
+    function createClouds() {
+      return Array.from({ length: 5 }, (_, i) => ({
+        x: i * 220 + 60,
+        y: 40 + Math.random() * 90,
+        w: 70 + Math.random() * 50,
+        h: 24 + Math.random() * 18,
+        speed: 0.8 + Math.random() * 0.7
+      }));
+    }
+
+    function resetGame() {
+      gameSpeed = 6;
+      frameCount = 0;
+      score = 0;
+      obstacles = [];
+      particles = [];
+      groundOffset = 0;
+      player.y = GROUND_Y - player.height;
+      player.vy = 0;
+      player.isOnGround = true;
+      player.animTimer = 0;
+      scoreEl.textContent = '0';
+      statusEl.textContent = 'スペースキーでスタート / ジャンプ';
+      gameState = 'ready';
+    }
+
+    function startGame() {
+      if (gameState === 'ready') {
+        gameState = 'playing';
+        statusEl.textContent = 'ジャンプで障害物を避けよう';
+      }
+    }
+
+    function restartGame() {
+      resetGame();
+      gameState = 'playing';
+      statusEl.textContent = 'ジャンプで障害物を避けよう';
+    }
+
+    function jump() {
+      if (gameState === 'gameover') return;
+      startGame();
+      if (player.isOnGround) {
+        player.vy = JUMP_POWER;
+        player.isOnGround = false;
+        spawnJumpParticles();
+      }
+    }
+
+    function spawnJumpParticles() {
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x: player.x + player.width / 2,
+          y: GROUND_Y - 8,
+          vx: -2 + Math.random() * 4,
+          vy: -1 - Math.random() * 2,
+          size: 3 + Math.random() * 4,
+          life: 20 + Math.random() * 10
+        });
+      }
+    }
+
+    function spawnObstacle() {
+      const typeRand = Math.random();
+
+      if (typeRand < 0.78) {
+        const width = 26 + Math.random() * 28;
+        const height = 35 + Math.random() * 55;
+        obstacles.push({
+          type: 'ground',
+          x: canvas.width + 20,
+          y: GROUND_Y - height,
+          width,
+          height,
+          passed: false
+        });
+      } else {
+        const width = 34 + Math.random() * 22;
+        const height = 24 + Math.random() * 20;
+        const flyY = GROUND_Y - 120 - Math.random() * 70;
+        obstacles.push({
+          type: 'air',
+          x: canvas.width + 20,
+          y: flyY,
+          width,
+          height,
+          passed: false,
+          bob: Math.random() * Math.PI * 2
+        });
+      }
+    }
+
+    function update() {
+      if (gameState === 'playing') {
+        frameCount++;
+        groundOffset += gameSpeed;
+        gameSpeed += 0.0015;
+
+        player.vy += GRAVITY;
+        player.y += player.vy;
+        player.animTimer += 1;
+
+        if (player.y >= GROUND_Y - player.height) {
+          player.y = GROUND_Y - player.height;
+          player.vy = 0;
+          player.isOnGround = true;
+        }
+
+        const spawnInterval = Math.max(55, 100 - Math.floor(score / 8));
+        if (frameCount % spawnInterval === 0) {
+          spawnObstacle();
+        }
+
+        for (const obstacle of obstacles) {
+          obstacle.x -= gameSpeed;
+          if (obstacle.type === 'air') {
+            obstacle.bob += 0.06;
+            obstacle.y += Math.sin(obstacle.bob) * 0.4;
+          }
+
+          if (!obstacle.passed && obstacle.x + obstacle.width < player.x) {
+            obstacle.passed = true;
+            score++;
+            scoreEl.textContent = String(score);
+            if (score > bestScore) {
+              bestScore = score;
+              localStorage.setItem('jumpGameBestScore', String(bestScore));
+              bestScoreEl.textContent = String(bestScore);
+            }
+          }
+        }
+
+        obstacles = obstacles.filter(obstacle => obstacle.x + obstacle.width > -60);
+
+        for (const cloud of clouds) {
+          cloud.x -= cloud.speed;
+          if (cloud.x + cloud.w < 0) {
+            cloud.x = canvas.width + Math.random() * 120;
+            cloud.y = 30 + Math.random() * 100;
+          }
+        }
+
+        for (const p of particles) {
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vy += 0.08;
+          p.life -= 1;
+        }
+        particles = particles.filter(p => p.life > 0);
+
+        checkCollision();
+      }
+    }
+
+    function checkCollision() {
+      const padding = 6;
+      const px = player.x + padding;
+      const py = player.y + padding;
+      const pw = player.width - padding * 2;
+      const ph = player.height - padding * 2;
+
+      for (const obstacle of obstacles) {
+        const ox = obstacle.x + 4;
+        const oy = obstacle.y + 4;
+        const ow = obstacle.width - 8;
+        const oh = obstacle.height - 8;
+
+        if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
+          gameOver();
+          break;
+        }
+      }
+    }
+
+    function gameOver() {
+      gameState = 'gameover';
+      statusEl.textContent = 'ゲームオーバー - Rキーでリスタート';
+      for (let i = 0; i < 18; i++) {
+        particles.push({
+          x: player.x + player.width / 2,
+          y: player.y + player.height / 2,
+          vx: -4 + Math.random() * 8,
+          vy: -5 + Math.random() * 8,
+          size: 4 + Math.random() * 6,
+          life: 24 + Math.random() * 20
+        });
+      }
+    }
+
+    function drawBackground() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (const cloud of clouds) {
+        drawCloud(cloud.x, cloud.y, cloud.w, cloud.h);
+      }
+
+      ctx.fillStyle = '#9ad36a';
+      ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+      ctx.fillStyle = '#7cbc4c';
+      for (let i = 0; i < canvas.width / 40 + 3; i++) {
+        const x = (i * 40) - (groundOffset % 40);
+        ctx.fillRect(x, GROUND_Y, 20, 8);
+      }
+
+      ctx.fillStyle = '#6b4f2a';
+      ctx.fillRect(0, GROUND_Y + 8, canvas.width, 8);
+    }
+
+    function drawCloud(x, y, w, h) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.beginPath();
+      ctx.arc(x, y + h * 0.5, h * 0.5, 0, Math.PI * 2);
+      ctx.arc(x + w * 0.25, y + h * 0.35, h * 0.6, 0, Math.PI * 2);
+      ctx.arc(x + w * 0.5, y + h * 0.5, h * 0.7, 0, Math.PI * 2);
+      ctx.arc(x + w * 0.75, y + h * 0.45, h * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawPlayer() {
+      const runOffset = player.isOnGround ? Math.sin(player.animTimer * 0.35) * 3 : 0;
+
+      ctx.save();
+      ctx.translate(player.x, player.y);
+
+      // shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+      ctx.beginPath();
+      ctx.ellipse(player.width / 2, player.height + 8, 22, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // body
+      ctx.fillStyle = '#ff9f1c';
+      ctx.fillRect(8, 10, 26, 28);
+
+      // head
+      ctx.fillStyle = '#ffd6a5';
+      ctx.fillRect(10, 0, 22, 18);
+
+      // eye
+      ctx.fillStyle = '#17324d';
+      ctx.fillRect(24, 6, 3, 3);
+
+      // legs
+      ctx.fillStyle = '#17324d';
+      ctx.fillRect(10, 38, 7, 14 + runOffset);
+      ctx.fillRect(25, 38, 7, 14 - runOffset);
+
+      // arms
+      ctx.fillRect(4, 15, 6, 16 - runOffset * 0.4);
+      ctx.fillRect(32, 15, 6, 16 + runOffset * 0.4);
+
+      ctx.restore();
+    }
+
+    function drawObstacle(obstacle) {
+      if (obstacle.type === 'ground') {
+        ctx.fillStyle = '#2d6a4f';
+        ctx.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+        ctx.fillStyle = '#40916c';
+        ctx.fillRect(obstacle.x + 4, obstacle.y + 6, obstacle.width - 8, obstacle.height - 6);
+      } else {
+        ctx.fillStyle = '#7b2cbf';
+        ctx.beginPath();
+        ctx.ellipse(
+          obstacle.x + obstacle.width / 2,
+          obstacle.y + obstacle.height / 2,
+          obstacle.width / 2,
+          obstacle.height / 2,
+          0,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+
+        ctx.fillStyle = '#c77dff';
+        ctx.beginPath();
+        ctx.arc(obstacle.x + obstacle.width * 0.35, obstacle.y + obstacle.height * 0.42, 5, 0, Math.PI * 2);
+        ctx.arc(obstacle.x + obstacle.width * 0.65, obstacle.y + obstacle.height * 0.42, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawParticles() {
+      ctx.fillStyle = 'rgba(50, 50, 50, 0.35)';
+      for (const p of particles) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawOverlay() {
+      if (gameState === 'ready') {
+        ctx.fillStyle = 'rgba(23, 50, 77, 0.14)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#17324d';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 42px Arial';
+        ctx.fillText('ジャンプアクション', canvas.width / 2, 135);
+        ctx.font = '24px Arial';
+        ctx.fillText('スペースキー / ↑ / クリック / タップ でスタート', canvas.width / 2, 190);
+        ctx.font = '18px Arial';
+        ctx.fillText('障害物をジャンプで避けてスコアを伸ばそう', canvas.width / 2, 230);
+      }
+
+      if (gameState === 'gameover') {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 48px Arial';
+        ctx.fillText('GAME OVER', canvas.width / 2, 150);
+        ctx.font = '28px Arial';
+        ctx.fillText(`スコア: ${score}`, canvas.width / 2, 205);
+        ctx.fillText(`ベスト: ${bestScore}`, canvas.width / 2, 245);
+        ctx.font = '22px Arial';
+        ctx.fillText('Rキーでリスタート', canvas.width / 2, 300);
+      }
+    }
+
+    function draw() {
+      drawBackground();
+      drawParticles();
+
+      for (const obstacle of obstacles) {
+        drawObstacle(obstacle);
+      }
+
+      drawPlayer();
+      drawOverlay();
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function handleActionKey(e) {
+      if (e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault();
+        jump();
+      }
+
+      if (e.code === 'KeyR' && gameState === 'gameover') {
+        restartGame();
+      }
+    }
+
+    window.addEventListener('keydown', handleActionKey, { passive: false });
+
+    canvas.addEventListener('mousedown', () => {
+      if (gameState === 'gameover') return;
+      jump();
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (gameState === 'gameover') return;
+      jump();
+    }, { passive: false });
+
+    jumpButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (gameState === 'gameover') return;
+      jump();
+    }, { passive: false });
+
+    jumpButton.addEventListener('click', () => {
+      if (gameState === 'gameover') return;
+      jump();
+    });
+
+    restartButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      restartGame();
+    }, { passive: false });
+
+    restartButton.addEventListener('click', () => {
+      restartGame();
+    });
+
+    resetGame();
+    gameLoop();
+  </script>
+</body>
+</html>
